@@ -81,6 +81,14 @@ BLECharacteristic* sensChar = nullptr;
 float  lastTemp = 25.0, lastHumi = 50.0;
 unsigned long lastSensorRead = 0;
 
+// --- FEATURE STATES ---
+bool pomoActive = false;
+unsigned long pomoEndTime = 0;
+bool alarmActive = false;
+int alarmHour = 0;
+int alarmMin = 0;
+bool weatherModeActive = false;
+
 // ==========================================
 // BLE CALLBACKS
 // ==========================================
@@ -109,9 +117,27 @@ class AnimCharCallbacks : public BLECharacteristicCallbacks {
 class TextCharCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* c) override {
     String txt = c->getValue().c_str();
-    Serial.print("Text received: ");
-    Serial.println(txt);
-    if (txt.length() > 0) showMessage(txt);
+    if (txt.startsWith("CMD:POMO:")) {
+      int mins = txt.substring(9).toInt();
+      pomoActive = true;
+      pomoEndTime = millis() + mins * 60000UL;
+      userAnimation = 1; // Looking / Focus
+      currentAnimation = 1;
+      weatherModeActive = false;
+      fillScreen(COLOR_BLACK); renderCurrentFrame();
+      playTone(1);
+    } else if (txt.startsWith("CMD:ALRM:")) {
+      alarmHour = txt.substring(9, 11).toInt();
+      alarmMin = txt.substring(12, 14).toInt();
+      alarmActive = true;
+      playTone(1);
+      showMessage("ALARM SET");
+    } else if (txt.startsWith("CMD:NOTI:")) {
+      playTone(1); // ding
+      showMessage("NEW MSG!");
+    } else if (txt.length() > 0) {
+      showMessage(txt);
+    }
   }
 };
 
@@ -285,8 +311,27 @@ void showMessage(const String& txt) {
 
   // Hold 4 seconds then erase and restore
   delay(4000);
-  fillRect(bx - 2, by - 12, bubbleW + 4, bubbleH + 14, COLOR_BLACK);
-  renderCurrentFrame();
+  fillScreen(COLOR_BLACK);
+  if (weatherModeActive) {
+    extern void drawWeatherDashboard();
+    drawWeatherDashboard();
+  } else {
+    renderCurrentFrame();
+  }
+}
+
+// Draw the dedicated weather/time dashboard
+void drawWeatherDashboard() {
+  fillScreen(COLOR_BLACK);
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%02d:%02d", getRTCHour(), getRTCMinute());
+  drawText(70, 40, buf, COLOR_CYAN, 5); 
+  
+  snprintf(buf, sizeof(buf), "TEMP: %.1f C", lastTemp);
+  drawText(20, 120, buf, COLOR_RED, 3);
+  
+  snprintf(buf, sizeof(buf), "HUM : %.1f %%", lastHumi);
+  drawText(20, 180, buf, COLOR_PINK, 3);
 }
 
 // ==========================================
@@ -715,9 +760,10 @@ void loop(){
   }
   bleWasConnected = bleConnected;
 
-  // --- Capacitive touch: short press = love, long press (3s) = show temp ---
+  // --- Capacitive touch: short press = love, long press = temp, double tap = weather mode ---
   static unsigned long touchStartMillis = 0;
   static bool isTouching = false;
+  static unsigned long lastReleaseMillis = 0;
   int tv = touchRead(TOUCH_PIN);
   
   if(tv > 0 && tv < 40) { // Currently touching
@@ -736,11 +782,27 @@ void loop(){
     if(isTouching) {
       // Released before 3 seconds = short press
       if(now - touchStartMillis < 3000 && now - lastTouchTime > 400) {
-        currentAnimation = 0; // Kissing/Loving animation
-        currentFrame = 0; lastTouchTime = now; lastFrameTime = now;
-        fillScreen(COLOR_BLACK); renderCurrentFrame();
-        playTone(1); // Happy chirp
-        touchOverrideEnd = now + 5000; // Hold love for 5 seconds
+        if (now - lastReleaseMillis < 600) {
+          // Double Tap -> Toggle Weather Mode
+          weatherModeActive = !weatherModeActive;
+          touchOverrideEnd = 0; // Cancel love override
+          if (weatherModeActive) {
+            drawWeatherDashboard();
+            playTone(1);
+          } else {
+            fillScreen(COLOR_BLACK); renderCurrentFrame();
+          }
+        } else {
+          // Single Tap -> Love Animation
+          if (!weatherModeActive) {
+            currentAnimation = 0; // Kissing/Loving animation
+            currentFrame = 0; lastTouchTime = now; lastFrameTime = now;
+            fillScreen(COLOR_BLACK); renderCurrentFrame();
+            playTone(1); // Happy chirp
+            touchOverrideEnd = now + 5000; // Hold love for 5 seconds
+          }
+        }
+        lastReleaseMillis = now;
       }
       isTouching = false;
     }
@@ -762,16 +824,25 @@ void loop(){
     readSensors();
   }
 
-  // --- RTC time-based mood & Hourly Chime: check every 60 seconds ---
+  // --- RTC time-based mood, Hourly Chime, & Smart Alarm ---
   static unsigned long lastRTCCheck = 0;
   static int lastRTCHour = -1;
   if(now - lastRTCCheck > 60000UL){
     lastRTCCheck = now;
     int h = getRTCHour();
+    int m = getRTCMinute();
     
-    // Software Feature: Hourly Chime (plays a jingle when the hour changes)
-    if (h != lastRTCHour && getRTCMinute() == 0 && lastRTCHour != -1) {
-      playTone(0); // Startup jingle acts as hourly chime
+    // Software Feature: Hourly Chime
+    if (h != lastRTCHour && m == 0 && lastRTCHour != -1) {
+      playTone(0);
+    }
+
+    // Software Feature: Smart Alarm Clock
+    if (alarmActive && h == alarmHour && m == alarmMin) {
+      alarmActive = false;
+      weatherModeActive = false;
+      playTone(4); playTone(4); // LOUD alarm
+      showMessage("WAKE UP!");
     }
 
     if(h != lastRTCHour && !autoMoodActive){
@@ -780,11 +851,26 @@ void loop(){
       if(scheduled != currentAnimation){
         userAnimation = scheduled;
         currentAnimation = scheduled;
-        currentFrame = 0; lastFrameTime = now;
-        fillScreen(COLOR_BLACK); renderCurrentFrame();
-        playAnimTone(currentAnimation);
+        if (!weatherModeActive) {
+          currentFrame = 0; lastFrameTime = now;
+          fillScreen(COLOR_BLACK); renderCurrentFrame();
+          playAnimTone(currentAnimation);
+        }
         Serial.printf("RTC hour=%d → animation %d\n", h, scheduled);
       }
+    }
+  }
+
+  // --- Pomodoro / Focus Timer ---
+  if (pomoActive) {
+    if (now > pomoEndTime) {
+      pomoActive = false;
+      userAnimation = 7; // Drinking / Break
+      currentAnimation = 7;
+      weatherModeActive = false;
+      fillScreen(COLOR_BLACK); renderCurrentFrame();
+      playTone(4); // Beep beep beep
+      showMessage("BREAK TIME!");
     }
   }
 
@@ -799,7 +885,7 @@ void loop(){
   else if(currentAnimation==6){ int t[]={1000,500,500,500,800};   delayMs=t[currentFrame]; }
   else if(currentAnimation==7){ int t[]={600,150,150,150};        delayMs=t[currentFrame]; }
 
-  if(now-lastFrameTime>delayMs){
+  if(now-lastFrameTime>delayMs && !weatherModeActive){
     lastFrameTime=now;
     currentFrame++;
     if(currentFrame>=maxFrames[currentAnimation]) currentFrame=0;

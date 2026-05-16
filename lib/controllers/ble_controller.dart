@@ -145,6 +145,21 @@ class BleController extends ChangeNotifier {
     }
   }
 
+  // --- Software Features ---
+  Future<bool> startPomodoro(int minutes) async {
+    return sendText("CMD:POMO:$minutes");
+  }
+
+  Future<bool> setAlarm(int hour, int minute) async {
+    final hh = hour.toString().padLeft(2, '0');
+    final mm = minute.toString().padLeft(2, '0');
+    return sendText("CMD:ALRM:$hh:$mm");
+  }
+
+  Future<bool> sendNotificationAlert() async {
+    return sendText("CMD:NOTI:1");
+  }
+
   /// Demo mode: works without a real device connected
   bool _mockSend(int index) {
     _currentAnimation = index;

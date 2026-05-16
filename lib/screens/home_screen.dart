@@ -187,6 +187,62 @@ class _DashboardTab extends StatelessWidget {
             ),
           ),
         ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text(
+              'SMART FEATURES',
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white30,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            child: Column(
+              children: [
+                _FeatureRow(
+                  icon: Icons.timer_rounded,
+                  title: 'Pomodoro Timer',
+                  subtitle: '25 min focus session',
+                  color: const Color(0xFFEF4444), // Red
+                  onTap: () {
+                    ble.startPomodoro(25);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Pomodoro timer started!')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _FeatureRow(
+                  icon: Icons.alarm_rounded,
+                  title: 'Smart Alarm',
+                  subtitle: 'Set for 07:30 AM',
+                  color: const Color(0xFF3B82F6), // Blue
+                  onTap: () {
+                    ble.setAlarm(7, 30);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Alarm set for 07:30 AM')),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _FeatureRow(
+                  icon: Icons.notifications_active_rounded,
+                  title: 'Test Notification',
+                  subtitle: 'Ping EMO with a fake message',
+                  color: const Color(0xFF10B981), // Green
+                  onTap: () => ble.sendNotificationAlert(),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -479,6 +535,74 @@ class _AnimCardState extends State<_AnimCard>
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Feature Row Widget ──────────────────────────────────────────────────────
+class _FeatureRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _FeatureRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161622),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.04)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      fontSize: 12,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.white24),
+          ],
         ),
       ),
     );
